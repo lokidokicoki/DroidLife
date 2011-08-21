@@ -307,7 +307,7 @@ public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback
 		            			int cell_state = grid.get(x, y);
 		            			//Log.d("DLT:doDraw", "point x:"+x+","+y+", state:"+cell_state);
 			            		if(cell_state == 1){
-			            			canvas.drawRect(x+2, y+2, 2, 2, paint);
+			            			canvas.drawPoint(x, y, paint);
 			            			//canvas.drawPoint(x, y+1, paint);
 			            			//canvas.drawPoint(x+1, y, paint);
 			            			//canvas.drawPoint(x+1, y+1, paint);
