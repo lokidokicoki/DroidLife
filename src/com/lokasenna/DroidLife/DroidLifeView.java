@@ -9,6 +9,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.Handler;
@@ -18,7 +19,7 @@ import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.TextView;
-
+import com.lokasenna.DroidLife.Matrix;
 public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback {
 	class DroidLifeThread extends Thread {
 		/*
@@ -28,8 +29,12 @@ public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback
         public static final int STATE_READY = 2;
         public static final int STATE_RUNNING = 3;
         public static final int STATE_LOSE = 4;
+        public static final int STATE_STEADY = 5;
+        
         
         private static final String KEY_CHANCE = "chance";
+        
+        private java.util.Random random;
 
         /*
          * Member (state) fields
@@ -42,6 +47,7 @@ public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback
 
         /** Indicate whether the surface has been created & is ready to draw */
         private boolean running = false;
+        private boolean grid_online = false;
         
         /** The state of the game. One of READY, RUNNING, PAUSE, LOSE, or WIN */
         private int mode;
@@ -59,31 +65,60 @@ public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback
          *
          * @see #setSurfaceSize
          */
-        private int canvas_height = 1;
+        private int grid_height = 1;
 
         /**
          * Current width of the surface/canvas.
          *
          * @see #setSurfaceSize
          */
-        private int canvas_width = 1;
+        private int grid_width = 1;
+        
+        private Paint paint;
+        private Paint dead_paint;
+        private RectF rect;
+        
+    	private int survive = (int)(Math.pow(2, 2) + Math.pow(2,3));
+    	private int birth = (int)(Math.pow(2,3));
+        private int rand_factor = 10;
+
+        /**
+         * Holds the image data.
+         * linear array of points, i.e [x0, y0, x1, y1... xN, yN]
+         */
+        float[] points=null;
+        
+        private Matrix grid=null;
+        private Matrix new_grid=null;
+        
+        
+        
+        
         
 		public DroidLifeThread(SurfaceHolder sh, Context ctx,
                 Handler h) {
+        	//Log.d("DLT:ctor", "ctor");
+			
 			// get handles to some important objects
             surface_holder = sh;
             handler = h;
             context = ctx;
+            paint=new Paint();
+            dead_paint=new Paint();
+            paint.setARGB(255,255,0,0);
+            dead_paint.setARGB(255,0,0,0);
+            rect = new RectF(0,0,0,0);
+            bg_image=Bitmap.createBitmap(1,1,Bitmap.Config.ARGB_8888);
+            random = new java.util.Random();
+            
 		}
 		
 			/**
 	         * Starts the game, setting parameters for the current difficulty.
 	         */
 	        public void doStart() {
+	        	//Log.d("DLT:dostart", "dostart");
 	            synchronized (surface_holder) {
-	            	Math.random();
-
-
 	                last_time = System.currentTimeMillis() + 100;
 	                setState(STATE_RUNNING);
 	            }
@@ -92,6 +127,7 @@ public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback
 	         * Pauses the physics update & animation.
 	         */
 	        public void pause() {
+	        	//Log.d("DLT:pause", "pause");
 	            synchronized (surface_holder) {
 	                if (mode == STATE_RUNNING) setState(STATE_PAUSE);
 	            }
@@ -105,6 +141,7 @@ public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback
 	         * @param savedState Bundle containing the game state
 	         */
 	        public synchronized void restoreState(Bundle savedState) {
+	        	//Log.d("DLT:restorestate", "restorestate");
 	            synchronized (surface_holder) {
 	                setState(STATE_PAUSE);
 
@@ -114,13 +151,16 @@ public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback
 
 	        @Override
 	        public void run() {
+	        	//Log.d("DLT:run", "run");
 	            while (running) {
 	                Canvas c = null;
 	                try {
 	                    c = surface_holder.lockCanvas(null);
 	                    synchronized (surface_holder) {
-	                        if (mode == STATE_RUNNING) update_world();
+	                    	if (mode == STATE_READY) init_world();
+	                        //Log.d("DLT:run", "call doDraw");
 	                        doDraw(c);
+	                        if (mode == STATE_RUNNING) update_world();
 	                    }
 	                } finally {
 	                    // do this in a finally so that if an exception is thrown
@@ -139,6 +179,7 @@ public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback
 	         * @return Bundle with this view's state
 	         */
 	        public Bundle saveState(Bundle map) {
+	        	//Log.d("DLT:savestate", "saveState");
 	            synchronized (surface_holder) {
 	                if (map != null) {
 	                    map.putInt(KEY_CHANCE, Integer.valueOf(chance));
@@ -156,6 +197,7 @@ public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback
 	         * @param b true to run, false to shut down
 	         */
 	        public void setRunning(boolean b) {
+	        	//Log.d("DLT:setRunning", "b:"+b);
 	            running = b;
 	        }
 
@@ -167,6 +209,7 @@ public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback
 	         * @param mode one of the STATE_* constants
 	         */
 	        public void setState(int mode) {
+	        	//Log.d("DLT:setState", "mode:"+mode);
 	            synchronized (surface_holder) {
 	                setState(mode, null);
 	            }
@@ -180,6 +223,7 @@ public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback
 	         * @param message string to add to screen or null
 	         */
 	        public void setState(int m, CharSequence message) {
+	        	//Log.d("DLT:setState", "m:"+m);
 	            /*
 	             * This method optionally can cause a text message to be displayed
 	             * to the user when the mode changes. Since the View that actually
@@ -192,6 +236,7 @@ public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback
 	                mode = m;
 
 	                if (mode == STATE_RUNNING) {
+	    	        	//Log.d("DLT:setState", "state:running");
 	                    Message msg = handler.obtainMessage();
 	                    Bundle b = new Bundle();
 	                    b.putString("text", "");
@@ -199,33 +244,46 @@ public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback
 	                    msg.setData(b);
 	                    handler.sendMessage(msg);
 	                } else {
-	                    Resources res = context.getResources();
-	                    CharSequence str = "";
-	                    if (mode == STATE_READY)
-	                        str = res.getText(R.string.mode_ready);
-	                    else if (mode == STATE_PAUSE)
-	                        str = res.getText(R.string.mode_pause);
+	                	if (context == null)
+		    	        	Log.d("DLT:setState", "context is null");
 
-	                    if (message != null) {
-	                        str = message + "\n" + str;
-	                    }
+	                	try{
+		    	        	//Log.d("DLT:setState", "get resources");
+		                    Resources res = context.getResources();
+		                    CharSequence str = "";
+		    	        	//Log.d("DLT:setState", "resources got");
+		                    if (mode == STATE_READY)
+		                        str = res.getText(R.string.mode_ready);
+		                    else if (mode == STATE_PAUSE)
+		                        str = res.getText(R.string.mode_pause);
+	
+		                    if (message != null) {
+		                        str = message + "\n" + str;
+		                    }
+	
+		                    Message msg = handler.obtainMessage();
+		                    Bundle b = new Bundle();
+		                    b.putString("text", str.toString());
+		                    b.putInt("viz", View.VISIBLE);
+		                    msg.setData(b);
+		                    handler.sendMessage(msg);
+		    	        	//Log.d("DLT:setState", "msg:"+str);
+	                	}catch(Resources.NotFoundException e){
+	                		Log.e("DLT:setState", e.toString());
+	                	}
+	                	
 
-	                    Message msg = handler.obtainMessage();
-	                    Bundle b = new Bundle();
-	                    b.putString("text", str.toString());
-	                    b.putInt("viz", View.VISIBLE);
-	                    msg.setData(b);
-	                    handler.sendMessage(msg);
 	                }
 	            }
 	        }
 
 			/* Callback invoked when the surface dimensions change. */
 	        public void setSurfaceSize(int width, int height) {
+	        	//Log.d("DLT:setSurfaceSize", "w:"+width+", h:"+height);
 	            // synchronized to make sure these all change atomically
 	            synchronized (surface_holder) {
-	                canvas_width = width;
-	                canvas_height = height;
+	                grid_width = width/2;
+	                grid_height = height/2;
 
 	                // don't forget to resize the background image
 	                bg_image = Bitmap.createScaledBitmap(
@@ -241,69 +299,153 @@ public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback
 	            // Draw the background image. Operations on the Canvas accumulate
 	            // so this is like clearing the screen.
 	            canvas.drawBitmap(bg_image, 0, 0, null);
-/*
-	            int yTop = mCanvasHeight - ((int) mY + mLanderHeight / 2);
-	            int xLeft = (int) mX - mLanderWidth / 2;
-
-	            // Draw the fuel gauge
-	            int fuelWidth = (int) (UI_BAR * mFuel / PHYS_FUEL_MAX);
-	            mScratchRect.set(4, 4, 4 + fuelWidth, 4 + UI_BAR_HEIGHT);
-	            canvas.drawRect(mScratchRect, mLinePaint);
-
-	            // Draw the speed gauge, with a two-tone effect
-	            double speed = Math.sqrt(mDX * mDX + mDY * mDY);
-	            int speedWidth = (int) (UI_BAR * speed / PHYS_SPEED_MAX);
-
-	            if (speed <= mGoalSpeed) {
-	                mScratchRect.set(4 + UI_BAR + 4, 4,
-	                        4 + UI_BAR + 4 + speedWidth, 4 + UI_BAR_HEIGHT);
-	                canvas.drawRect(mScratchRect, mLinePaint);
-	            } else {
-	                // Draw the bad color in back, with the good color in front of
-	                // it
-	                mScratchRect.set(4 + UI_BAR + 4, 4,
-	                        4 + UI_BAR + 4 + speedWidth, 4 + UI_BAR_HEIGHT);
-	                canvas.drawRect(mScratchRect, mLinePaintBad);
-	                int goalWidth = (UI_BAR * mGoalSpeed / PHYS_SPEED_MAX);
-	                mScratchRect.set(4 + UI_BAR + 4, 4, 4 + UI_BAR + 4 + goalWidth,
-	                        4 + UI_BAR_HEIGHT);
-	                canvas.drawRect(mScratchRect, mLinePaint);
-	            }
-
-	            // Draw the landing pad
-	            canvas.drawLine(mGoalX, 1 + mCanvasHeight - TARGET_PAD_HEIGHT,
-	                    mGoalX + mGoalWidth, 1 + mCanvasHeight - TARGET_PAD_HEIGHT,
-	                    mLinePaint);
-
-
-	            // Draw the ship with its current rotation
-	            canvas.save();
-	            canvas.rotate((float) mHeading, (float) mX, mCanvasHeight
-	                    - (float) mY);
-	            if (mMode == STATE_LOSE) {
-	                mCrashedImage.setBounds(xLeft, yTop, xLeft + mLanderWidth, yTop
-	                        + mLanderHeight);
-	                mCrashedImage.draw(canvas);
-	            } else if (mEngineFiring) {
-	                mFiringImage.setBounds(xLeft, yTop, xLeft + mLanderWidth, yTop
-	                        + mLanderHeight);
-	                mFiringImage.draw(canvas);
-	            } else {
-	                mLanderImage.setBounds(xLeft, yTop, xLeft + mLanderWidth, yTop
-	                        + mLanderHeight);
-	                mLanderImage.draw(canvas);
-	            }
-	            canvas.restore();
-	            */
+	            
+	            if (mode == STATE_RUNNING){
+	            	for (int x=0; x < grid_width; x++){
+		            	for(int y=0; y< grid_height; y++){
+		            		try{
+		            			int cell_state = grid.get(x, y);
+		            			//Log.d("DLT:doDraw", "point x:"+x+","+y+", state:"+cell_state);
+			            		if(cell_state == 1){
+			            			canvas.drawRect(x+2, y+2, 2, 2, paint);
+			            			//canvas.drawPoint(x, y+1, paint);
+			            			//canvas.drawPoint(x+1, y, paint);
+			            			//canvas.drawPoint(x+1, y+1, paint);
+			            			//Log.d("DLT:doDraw", "point x:"+x+","+y);
+			            			
+			            		}
+			            		else{
+			            			canvas.drawPoint(x,y,dead_paint);
+			            		}
+		            		}catch(Matrix.BoundsViolation bv){
+		            			//Log.e("DLT:doDraw", bv.getError());
+		            		}
+		            	}
+		            }
+	            }//else{
+		            //rect.set(10,10,50,50);
+	            	//canvas.drawRect(rect, paint);
+	            //}
+	            
+	            //canvas.restore();
+	        }
+	        
+	        private void init_world(){
+	        	if (grid_online != true){
+		        	try {
+		        		//Log.d("DLT:init_world","init_grid");
+		        		grid = new Matrix(grid_width, grid_height);
+		        		new_grid = new Matrix(grid_width, grid_height);
+		        		
+		        		for(int x=0; x < grid_width; x++){
+		        			for(int y=0; y < grid_height; y++){
+		        				grid.set(x, y, new Integer(0));
+		        				new_grid.set(x, y, new Integer(0));
+		        			}
+		        		}
+		        		
+		        		//init_rule();
+		        		for(int x=0; x < grid_width; x++){
+		        			for(int y=0; y < grid_height; y++){
+		        				int num = (int)((random.nextInt(100)%rand_factor)+1);//(int) ((Math.random() % rand_factor)+1);
+		        				//Log.d("DLT:init_world","num:"+num);
+		        				if (num == rand_factor){
+		    		        		//Log.d("DLT:init_world","set point x:"+x+", y:"+y);
+		        					grid.set(x, y, new Integer(1));
+		        				}
+		        			}
+		        		}
+		        		Log.d("DLT:init_world","grids built");
+		        		
+		        		grid_online=true;
+		        	} catch(Matrix.BoundsViolation bv){
+		        		//Log.e("DLT:init_world", "bound violation:"+bv.getError());
+		        	}
+	        	}
 	        }
 
-	        /**
-	         * Figures the lander state (x, y, fuel, ...) based on the passage of
-	         * realtime. Does not invalidate(). Called at the start of draw().
-	         * Detects the end-of-game and sets the UI to the next state.
-	         */
-	        private void update_world() {
-	            long now = System.currentTimeMillis();
+	        private int check_cell(int x, int y){
+	        	int count=0;
+	        	try{
+	        		int cell_value = grid.get(x,y);
+	        		//Log.d("DLT:check_cell", "x:"+x+", y:"+y+", state:"+cell_value);
+	        		if (cell_value != 0){// && cell_value != 4){
+	        			count=1;
+	        		}
+	        	
+	        	}catch(Matrix.BoundsViolation bv){
+	        		//Log.e("DLT:check_cell", bv.getError());
+	        	}
+	        	return count;
+	        }
+	        
+	        private int check_rule(int cell_state, int count){
+	        	int result=0; 
+	        	//Log.d("DLT:check_rule","state:"+cell_state+", survive:"+survive+", birth:"+birth+", count:"+count+" <C:"+pow(2,count));
+	            if(cell_state != 0){
+	              //  if((survive & ((int)pow(2,count))) == 1){
+	            	if(count == 2 || count == 3){
+	    	        	//Log.d("DLT:check_rule","do_survive");
+	                    result=1;
+	                }
+	            }else{
+	                //if((birth & ((int)pow(2,count))) == 1){
+	            	if(count == 3){
+	    	        	//Log.d("DLT:check_rule","do_birth");
+	                    result=1;
+	                }
+	            }
+	            return result;   
+	        }
+
+	        private int pow(int i, int count) {
+				// TODO Auto-generated method stub
+	        	double result = Math.pow((double)i, (double)count);
+				return (int)result;
+			}
+
+			private void update_world() {
+	            //long now = System.currentTimeMillis();
+	        	
+	            
+	            //make new grid based on old grid
+        		for(int x=0; x < grid_width; x++){
+        			for(int y=0; y < grid_height; y++){
+        				int count=0;
+        				count += check_cell(x-1,y-1);
+        				count += check_cell(x,y-1);
+        				count += check_cell(x+1,y-1);
+        				count += check_cell(x-1,y);
+        				count += check_cell(x+1,y);
+        				count += check_cell(x-1,y+1);
+        				count += check_cell(x,y+1);
+        				count += check_cell(x+1,y+1);
+        				
+    					//Log.d("DLT:update_world", "x:"+x+" y:"+y+" count:"+count);
+        				
+        				try{
+        					new_grid.set(x,y, check_rule(grid.get(x,y), count));
+        					//Log.d("DLT:update_world", "new_grid x:"+x+" y:"+y+" state:"+new_grid.get(x, y));
+        					
+        				}catch(Matrix.BoundsViolation bv){
+        					//Log.e("DLT:update_world", bv.getError());
+        				}
+        			}
+        			
+        		}
+
+				Log.d("DLT:update_world","fix grid");
+        		//make new grid based on old grid
+        		for(int x=0; x < grid_width; x++){
+        			for(int y=0; y < grid_height; y++){
+        				try{
+        					grid.set(x, y, new_grid.get(x, y));
+        				}catch(Matrix.BoundsViolation bv){
+        					//Log.e("DLT:update_world", bv.getError());
+        				}
+        			}
+        		}
+        		
 	        }
 	        
 	        /**
@@ -329,14 +471,14 @@ public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback
 
 	    public DroidLifeView(Context ctx, AttributeSet attrs) {
 	        super(ctx, attrs);
-	    	Log.e(this.getClass().getName(), "spin up");
+	    	//Log.d("DLV:ctor", "ctor");
 
 	        // register our interest in hearing about changes to our surface
 	        SurfaceHolder holder = getHolder();
 	        holder.addCallback(this);
-
+	        
 	        // create thread only; it's started in surfaceCreated()
-	        thread = new DroidLifeThread(holder, context, new Handler() {
+	        thread = new DroidLifeThread(holder, ctx, new Handler() {
 	            @Override
 	            public void handleMessage(Message m) {
 	                status_text.setVisibility(m.getData().getInt("viz"));
@@ -375,6 +517,7 @@ public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback
 		/* Callback invoked when the surface dimensions change. */
 	    public void surfaceChanged(SurfaceHolder holder, int format, int width,
 	            int height) {
+	    	//Log.d("DLV:surfaceChanged", "w:"+width+", h:"+height);
 	        thread.setSurfaceSize(width, height);
 	    }
 
@@ -404,6 +547,7 @@ public class DroidLifeView extends SurfaceView implements SurfaceHolder.Callback
 	                thread.join();
 	                retry = false;
 	            } catch (InterruptedException e) {
+	            	//Log.e("loki", "failed to rejoin thread");
 	            }
 	        }
 	    }
