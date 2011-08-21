@@ -19,10 +19,10 @@ public class DroidLifeActivity extends Activity {
     private static final int MENU_STOP = 4;
 
     /** A handle to the thread that's actually running the animation. */
-    private DroidLifeThread thread;
+    private DroidLifeThread thread = null;
 
     /** A handle to the View in which the game is running. */
-    private DroidLifeView view;
+    private DroidLifeView view = null;
 
     /**
      * Invoked during init to give the Activity a chance to set up its Menu.
@@ -86,11 +86,20 @@ public class DroidLifeActivity extends Activity {
         setContentView(R.layout.main);
 
         // get handles to the DroidLifeView from XML, and its DroidLifeThread
-        view = (DroidLifeView) findViewById(R.id.life);
+        view = (DroidLifeView) findViewById(R.id.droidLifeView1);
+        
+        if (view == null){
+        	Log.e("loki", "no view!");
+        }
+        
         thread = view.getThread();
-
+        
+        if (thread == null){
+        	Log.e("loki", "no view!");
+        }
+        
         // give the DroidLifeView a handle to the TextView used for messages
-        view.setTextView((TextView) findViewById(R.id.text));
+        view.setTextView((TextView) findViewById(R.id.textView1));
 
         if (savedInstanceState == null) {
             // we were just launched: set up a new game
