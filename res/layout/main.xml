@@ -17,25 +17,9 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
-
-    <com.lokasenna.DroidLife.DroidLifeView
-      android:id="@+id/life"
-      android:layout_width="match_parent"
-      android:layout_height="match_parent"/>
-
-    <RelativeLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" >
-        <TextView
-          android:id="@+id/text"
-                  android:text="@string/life_layout_text_text"
-                  android:visibility="visible"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:layout_centerInParent="true"
-          android:gravity="center_horizontal"
-          android:textColor="#88ffffff"
-          android:textSize="24sp"/>
-     </RelativeLayout>
+    <com.lokasenna.DroidLife.DroidLifeView android:id="@+id/droidLifeView1" android:layout_width="match_parent" android:layout_height="497dp"></com.lokasenna.DroidLife.DroidLifeView>
+    <RelativeLayout android:layout_width="match_parent" android:id="@+id/relativeLayout1" android:layout_height="match_parent">
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:id="@+id/textView1" android:text="TextView" android:layout_alignParentTop="true" android:layout_alignParentLeft="true" android:layout_alignParentBottom="true" android:layout_alignParentRight="true"></TextView>
+    </RelativeLayout>
 
 </FrameLayout>
